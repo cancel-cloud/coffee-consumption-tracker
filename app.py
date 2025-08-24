@@ -13,6 +13,10 @@ st.set_page_config(
     page_icon="☕"
 )
 
+# Initialize session state for quick buttons
+if 'quick_buttons' not in st.session_state:
+    st.session_state.quick_buttons = []
+
 # Custom CSS for better styling
 st.markdown("""
 <style>
@@ -83,6 +87,7 @@ st.markdown("""
 # Einführung der Sidebar-Toggles
 st.sidebar.markdown("### ⚙️ Einstellungen")
 show_varieties = st.sidebar.checkbox("🌱 Sortenverwaltung anzeigen", value=False)
+show_quick_settings = st.sidebar.checkbox("⚡ Quick-Entry Einstellungen", value=False)
 show_editor = st.sidebar.checkbox("✏️ Einträge bearbeiten & löschen", value=True)
 show_stats = st.sidebar.checkbox("📊 Statistiken anzeigen", value=True)
 show_pie = st.sidebar.checkbox("🥧 Sorten-Verteilung anzeigen", value=True)
@@ -166,6 +171,41 @@ if show_varieties:
                 st.success(f"🗑️ Gelöscht: {', '.join(to_delete)}")
                 st.rerun()
 
+# Quick Entry Settings (optional)
+if show_quick_settings:
+    with st.sidebar.expander("⚡ Quick-Entry Buttons konfigurieren", expanded=False):
+        df_var = pd.read_sql(select(varieties), engine)
+        
+        if not df_var.empty:
+            st.markdown("**⚡ Wähle Sorten für Quick-Entry Buttons:**")
+            
+            # Initialize session state for quick buttons if not exists
+            if 'quick_buttons' not in st.session_state:
+                st.session_state.quick_buttons = []
+            
+            # Create multiselect for choosing quick button varieties
+            selected_varieties = st.multiselect(
+                "Sorten für Quick Buttons",
+                options=df_var['name'].tolist(),
+                default=st.session_state.quick_buttons,
+                help="Ausgewählte Sorten erscheinen als Quick-Entry Buttons im Hauptbereich"
+            )
+            
+            # Update session state
+            st.session_state.quick_buttons = selected_varieties
+            
+            if selected_varieties:
+                st.success(f"✅ {len(selected_varieties)} Quick Buttons konfiguriert")
+                st.markdown("**Konfigurierte Buttons:**")
+                for variety in selected_varieties:
+                    variety_info = df_var[df_var['name'] == variety].iloc[0]
+                    caffeine = int(variety_info.get('caffeine_mg', 0))
+                    st.write(f"☕ **{variety}** - {caffeine}mg Koffein/Tasse")
+            else:
+                st.info("ℹ️ Keine Quick Buttons konfiguriert")
+        else:
+            st.warning("⚠️ Bitte erst Sorten hinzufügen, um Quick Buttons zu konfigurieren!")
+
 # App-Header
 st.markdown('<h1 class="main-header">☕ Kaffeekonsum-Tracker</h1>', unsafe_allow_html=True)
 
@@ -238,6 +278,62 @@ if not df.empty:
 
 # Neuer Eintrag in schönerer Box
 st.markdown('<div class="section-header">➕ Neuen Eintrag hinzufügen</div>', unsafe_allow_html=True)
+
+# Quick Entry Buttons (always visible if configured)
+if 'quick_buttons' in st.session_state and st.session_state.quick_buttons:
+    df_var = pd.read_sql(select(varieties), engine)
+    if not df_var.empty:
+        st.markdown("**⚡ Quick Entry Buttons:**")
+        
+        # Create columns for quick buttons (max 4 per row)
+        quick_varieties = st.session_state.quick_buttons
+        num_buttons = len(quick_varieties)
+        
+        if num_buttons > 0:
+            # Calculate number of rows needed (max 4 buttons per row)
+            buttons_per_row = min(4, num_buttons)
+            rows = (num_buttons + buttons_per_row - 1) // buttons_per_row
+            
+            button_index = 0
+            for row in range(rows):
+                # Create columns for this row
+                remaining_buttons = min(buttons_per_row, num_buttons - button_index)
+                cols = st.columns(remaining_buttons)
+                
+                for col_idx in range(remaining_buttons):
+                    if button_index < num_buttons:
+                        variety_name = quick_varieties[button_index]
+                        variety_info = df_var[df_var['name'] == variety_name]
+                        
+                        if not variety_info.empty:
+                            variety_data = variety_info.iloc[0]
+                            caffeine = int(variety_data.get('caffeine_mg', 0))
+                            variety_id = int(variety_data['id'])
+                            
+                            with cols[col_idx]:
+                                button_key = f"quick_{variety_name}_{button_index}"
+                                if st.button(
+                                    f"☕ {variety_name}\n({caffeine}mg)", 
+                                    key=button_key,
+                                    help=f"1 Tasse {variety_name} für heute hinzufügen",
+                                    use_container_width=True
+                                ):
+                                    # Add entry for today with 1 cup of this variety
+                                    today = date.today()
+                                    with engine.begin() as conn:
+                                        conn.execute(
+                                            consumption.insert().values(
+                                                date=today,
+                                                cups=1,
+                                                variety_id=variety_id
+                                            )
+                                        )
+                                    st.success(f"✅ 1 Tasse {variety_name} für heute hinzugefügt! (+{caffeine}mg Koffein)")
+                                    st.rerun()
+                        
+                        button_index += 1
+            
+            st.markdown("---")  # Separator between quick buttons and manual entry
 
 with st.container():
     col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
