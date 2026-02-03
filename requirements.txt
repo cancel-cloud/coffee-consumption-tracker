@@ -5,3 +5,4 @@ calplot
 python-dotenv
 appwrite 
 pillow>=10.3.0 # not directly required, pinned by Snyk to avoid a vulnerability
+protobuf>=6.33.5 # not directly required, pinned by Snyk to avoid a vulnerability
